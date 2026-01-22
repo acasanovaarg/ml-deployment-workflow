@@ -1,0 +1,95 @@
+run:
+  seed: 123
+  out_root: runs
+  name_prefix: cifar10_cnn
+
+data:
+  dataset: cifar10
+  normalize: true
+  dtype: float32
+  validation_split: 0.2
+
+train:
+  epochs: 64
+  batch_size: 64
+  verbose: 1
+
+regularization:
+  l2: 1.0e-4
+
+model:
+  input_shape: [32, 32, 3]
+  layers:
+    - type: RandomFlip
+      args: ["horizontal"]
+
+    - type: RandomTranslation
+      kwargs: { height_factor: 0.1, width_factor: 0.1 }
+
+    - type: RandomRotation
+      kwargs: { factor: 0.05 }
+
+    - type: Conv2D
+      kwargs: { filters: 32, kernel_size: 3, padding: same, use_bias: false }
+    - type: BatchNormalization
+    - type: Activation
+      args: ["relu"]
+    - type: MaxPooling2D
+      kwargs: { pool_size: [2, 2] }
+    - type: Dropout
+      kwargs: { rate: 0.10 }
+
+    - type: Conv2D
+      kwargs: { filters: 64, kernel_size: 3, padding: same, use_bias: false }
+    - type: BatchNormalization
+    - type: Activation
+      args: ["relu"]
+    - type: MaxPooling2D
+      kwargs: { pool_size: [2, 2] }
+    - type: Dropout
+      kwargs: { rate: 0.15 }
+
+    - type: Conv2D
+      kwargs: { filters: 128, kernel_size: 3, padding: same, use_bias: false }
+    - type: BatchNormalization
+    - type: Activation
+      args: ["relu"]
+    - type: MaxPooling2D
+      kwargs: { pool_size: [2, 2] }
+    - type: Dropout
+      kwargs: { rate: 0.20 }
+
+    - type: GlobalAveragePooling2D
+    - type: Dense
+      kwargs: { units: 128, activation: relu }
+    - type: Dropout
+      kwargs: { rate: 0.40 }
+
+    - type: Dense
+      kwargs: { units: 10, activation: softmax }
+
+compile:
+  loss: sparse_categorical_crossentropy
+  metrics: [accuracy]
+  optimizer:
+    type: Adam
+    kwargs: { learning_rate: 0.001 }
+
+callbacks:
+  - type: EarlyStopping
+    kwargs: { monitor: val_loss, patience: 5, restore_best_weights: true, verbose: 1 }
+
+  - type: ReduceLROnPlateau
+    kwargs: { monitor: val_loss, factor: 0.5, patience: 2, min_lr: 1.0e-5, verbose: 1 }
+
+  - type: ModelCheckpoint
+    kwargs: { monitor: val_loss, save_best_only: true, save_weights_only: false, verbose: 1 }
+    # filepath lo completa el script usando out_dir
+
+  - type: CSVLogger
+    # filename lo completa el script usando out_dir
+
+  - type: TensorBoard
+    # log_dir lo completa el script usando out_dir
+
+  - type: TerminateOnNaN

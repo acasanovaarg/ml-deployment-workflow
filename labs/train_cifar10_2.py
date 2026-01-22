@@ -10,7 +10,6 @@ random.seed(SEED)
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 
-# Data
 from tensorflow.keras.datasets import cifar10
 (x_train, y_train), (x_test, y_test) = cifar10.load_data()
 y_train = y_train.squeeze().astype(np.int64)
@@ -18,19 +17,18 @@ y_test  = y_test.squeeze().astype(np.int64)
 x_train = x_train.astype(np.float32) / 255.0
 x_test  = x_test.astype(np.float32) / 255.0
 
-# Output
 run_id = time.strftime("%Y%m%d-%H%M%S")
 out_dir = os.path.join("runs", f"cifar10_cnn_{run_id}")
 os.makedirs(out_dir, exist_ok=True)
 
-# Data augmentation inside model
+# Augmentation estándar CIFAR-10
 data_aug = keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomTranslation(0.1, 0.1),
-    layers.RandomRotation(0.05),
+    layers.ZeroPadding2D(4),
+    layers.RandomCrop(32, 32),
 ], name="data_aug")
 
-l2 = keras.regularizers.l2(1e-4)
+l2 = keras.regularizers.l2(5e-5)  # menos agresivo
 
 inputs = keras.Input(shape=(32, 32, 3))
 x = data_aug(inputs)
@@ -40,42 +38,49 @@ x = layers.Conv2D(32, 3, padding="same", use_bias=False, kernel_regularizer=l2)(
 x = layers.BatchNormalization()(x)
 x = layers.Activation("relu")(x)
 x = layers.MaxPooling2D()(x)
-x = layers.Dropout(0.1)(x)
+x = layers.Dropout(0.05)(x)
 
 # Block 2
 x = layers.Conv2D(64, 3, padding="same", use_bias=False, kernel_regularizer=l2)(x)
 x = layers.BatchNormalization()(x)
 x = layers.Activation("relu")(x)
 x = layers.MaxPooling2D()(x)
-x = layers.Dropout(0.15)(x)
+x = layers.Dropout(0.10)(x)
 
 # Block 3
 x = layers.Conv2D(128, 3, padding="same", use_bias=False, kernel_regularizer=l2)(x)
 x = layers.BatchNormalization()(x)
 x = layers.Activation("relu")(x)
 x = layers.MaxPooling2D()(x)
-x = layers.Dropout(0.2)(x)
+x = layers.Dropout(0.15)(x)
 
-# Head (key change)
+# Head
 x = layers.GlobalAveragePooling2D()(x)
 x = layers.Dense(128, activation="relu", kernel_regularizer=l2)(x)
-x = layers.Dropout(0.4)(x)
+x = layers.Dropout(0.35)(x)
 outputs = layers.Dense(10, activation="softmax")(x)
 
 model = keras.Model(inputs, outputs)
-model.summary()
 
-# LR schedule (CosineDecay) - reemplaza ReduceLROnPlateau
-steps_per_epoch = int(np.ceil(len(x_train) * 0.8 / 64))  # ~por validation_split 0.2
-total_steps = steps_per_epoch * 80
+batch_size = 64
+val_split = 0.2
+epochs = 120
+
+train_size = int(len(x_train) * (1.0 - val_split))
+steps_per_epoch = int(np.ceil(train_size / batch_size))
+total_steps = steps_per_epoch * epochs
 
 lr_schedule = keras.optimizers.schedules.CosineDecay(
-    initial_learning_rate=1e-3,
+    initial_learning_rate=0.05,
     decay_steps=total_steps,
-    alpha=1e-2  # LR final = 1% del inicial
+    alpha=1e-2
 )
 
-optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
+optimizer = keras.optimizers.SGD(
+    learning_rate=lr_schedule,
+    momentum=0.9,
+    nesterov=True
+)
 
 model.compile(
     optimizer=optimizer,
@@ -92,7 +97,7 @@ callbacks = [
     ),
     keras.callbacks.EarlyStopping(
         monitor="val_accuracy",
-        patience=12,
+        patience=20,
         restore_best_weights=True,
         verbose=1
     ),
@@ -103,9 +108,9 @@ callbacks = [
 
 history = model.fit(
     x_train, y_train,
-    epochs=80,
-    batch_size=64,
-    validation_split=0.2,
+    epochs=epochs,
+    batch_size=batch_size,
+    validation_split=val_split,
     callbacks=callbacks,
     verbose=1
 )
